@@ -4,13 +4,12 @@ import psycopg2.extras
 import os
 import json as _json
 from dotenv import load_dotenv
-from openai import OpenAI
+from groq import Groq
 
 load_dotenv()
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 DB_CONFIG = {
     "host":     os.getenv("DB_HOST"),
     "database": os.getenv("DB_NAME", "postgres"),
@@ -176,7 +175,7 @@ def responder_inteligente(pregunta: str) -> str:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="llama3-8b-8192",
             messages=[
                 {
                     "role": "system",

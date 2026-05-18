@@ -4,5 +4,5 @@ psycopg2-binary
 matplotlib
 sentence-transformers
 python-dotenv
-openai
+groq
 pgvector
