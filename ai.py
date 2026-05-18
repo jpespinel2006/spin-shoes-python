@@ -10,6 +10,7 @@ load_dotenv()
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
 DB_CONFIG = {
     "host":     os.getenv("DB_HOST"),
     "database": os.getenv("DB_NAME", "postgres"),
@@ -28,7 +29,6 @@ def get_conn():
 def indexar_datos():
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-
     documentos = []
 
     cur.execute("""
@@ -46,10 +46,10 @@ def indexar_datos():
             except Exception:
                 pass
 
-        color    = pers.get('color_producto', pers.get('color', ''))
-        suela    = pers.get('suela', '')
-        tallas   = pers.get('tallas', {})
-        nota     = pers.get('nota', '')
+        color  = pers.get('color_producto', pers.get('color', ''))
+        suela  = pers.get('suela', '')
+        tallas = pers.get('tallas', {})
+        nota   = pers.get('nota', '')
 
         tallas_str = ""
         if tallas:
@@ -171,30 +171,29 @@ def responder_inteligente(pregunta: str) -> str:
     contexto = buscar_contexto(emb, k=5)
 
     if not contexto.strip():
-        return "No encontré información relevante en el sistema para responder esa consulta."
+        contexto = "No hay datos específicos disponibles."
+
+    prompt_sistema = (
+        "Eres el asistente inteligente de Spin Shoes SAS, una empresa de fabricación de calzado colombiana. "
+        "Puedes responder saludos y preguntas generales de forma amable y natural. "
+        "También tienes acceso a información de pedidos, clientes y catálogo de la empresa. "
+        "Cuando te saluden, responde amablemente. "
+        "Cuando pregunten sobre datos de la empresa, usa el contexto proporcionado. "
+        "Si no tienes información específica, dilo amablemente. "
+        "Sé conciso, natural y profesional."
+    )
 
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Eres el asistente inteligente de Spin Shoes SAS, una empresa de fabricación de calzado. "
-                        "Tienes acceso a información de pedidos, clientes y catálogo. "
-                        "Responde ÚNICAMENTE con la información del contexto proporcionado. "
-                        "Sé directo y conciso. No inventes datos."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": f"Contexto:\n{contexto}\n\nPregunta: {pregunta}"
-                }
+                {"role": "system", "content": prompt_sistema},
+                {"role": "user", "content": f"Contexto:\n{contexto}\n\nPregunta: {pregunta}"}
             ],
             max_tokens=300,
-            temperature=0.1
+            temperature=0.3
         )
         return response.choices[0].message.content
     except Exception as e:
-        print("Error OpenAI:", e)
+        print("Error Groq:", e)
         return "No pude procesar tu consulta en este momento."
