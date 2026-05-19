@@ -32,7 +32,7 @@ def indexar_datos():
     documentos = []
 
     cur.execute("""
-        SELECT id, status, cantidad, cliente, modelo, personalizacion, created_at
+        SELECT id, status, cantidad, cliente, modelo, personalizacion, created_at, pago_estado, pago_monto
         FROM public.orders
         ORDER BY id DESC
         LIMIT 500
@@ -57,6 +57,10 @@ def indexar_datos():
             if partes:
                 tallas_str = ", " + ", ".join(partes)
 
+        pago_str = f", pago: {row['pago_estado']}"
+        if row['pago_monto'] and float(row['pago_monto']) > 0:
+            pago_str += f" (${row['pago_monto']})"
+
         texto = (
             f"Pedido #{row['id']} — "
             f"cliente: {row['cliente']}, "
@@ -66,7 +70,8 @@ def indexar_datos():
             f"{tallas_str}"
             f"{f', color: {color}' if color else ''}"
             f"{f', suela: {suela}' if suela else ''}"
-            f"{f', nota: {nota}' if nota else ''}."
+            f"{f', nota: {nota}' if nota else ''}"
+            f"{pago_str}."
         )
         documentos.append(("orders", texto))
 
@@ -89,6 +94,23 @@ def indexar_datos():
         f"Total de pares: {total_pares}."
     )
     documentos.append(("orders_resumen", resumen_pedidos))
+
+    cur.execute("SELECT COUNT(*) FROM public.orders WHERE pago_estado = 'pagado'")
+    ord_pagados = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM public.orders WHERE pago_estado = 'abono'")
+    ord_abonos = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM public.orders WHERE pago_estado = 'pendiente' OR pago_estado IS NULL")
+    ord_pendientes = cur.fetchone()[0]
+    cur.execute("SELECT COALESCE(SUM(pago_monto), 0) FROM public.orders WHERE pago_estado = 'pagado'")
+    total_pagado = cur.fetchone()[0]
+
+    resumen_pagos = (
+        f"Resumen de pagos: {ord_pagados} pedidos pagados completamente, "
+        f"{ord_abonos} pedidos con abono, "
+        f"{ord_pendientes} pedidos con pago pendiente. "
+        f"Total recaudado: ${total_pagado}."
+    )
+    documentos.append(("pagos", resumen_pagos))
 
     cur.execute("SELECT id, nombre, nit, ciudad, tipo_cliente, telefono, email FROM public.clients LIMIT 200")
     for row in cur.fetchall():
@@ -176,7 +198,7 @@ def responder_inteligente(pregunta: str) -> str:
     prompt_sistema = (
         "Eres el asistente inteligente de Spin Shoes SAS, una empresa de fabricación de calzado colombiana. "
         "Puedes responder saludos y preguntas generales de forma amable y natural. "
-        "También tienes acceso a información de pedidos, clientes y catálogo de la empresa. "
+        "También tienes acceso a información de pedidos, clientes, pagos y catálogo de la empresa. "
         "Cuando te saluden, responde amablemente. "
         "Cuando pregunten sobre datos de la empresa, usa el contexto proporcionado. "
         "Si no tienes información específica, dilo amablemente. "
