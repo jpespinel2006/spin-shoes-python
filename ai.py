@@ -32,7 +32,7 @@ def indexar_datos():
     documentos = []
 
     cur.execute("""
-        SELECT id, status, cantidad, cliente, modelo, personalizacion, created_at, pago_estado, pago_monto
+        SELECT id, status, cantidad, cliente, modelo, personalizacion, created_at, pago_estado, pago_monto, precio_total
         FROM public.orders
         ORDER BY id DESC
         LIMIT 500
@@ -57,9 +57,19 @@ def indexar_datos():
             if partes:
                 tallas_str = ", " + ", ".join(partes)
 
-        pago_str = f", pago: {row['pago_estado']}"
-        if row['pago_monto'] and float(row['pago_monto']) > 0:
-            pago_str += f" (${row['pago_monto']})"
+        precio_total_val = float(row['precio_total'] or 0)
+        monto_abonado    = float(row['pago_monto'] or 0)
+        saldo_val        = max(0, precio_total_val - monto_abonado)
+
+        pago_str = f", estado de pago: {row['pago_estado']}"
+        if precio_total_val > 0:
+            pago_str += f", precio total del pedido: ${precio_total_val:,.0f}"
+        if monto_abonado > 0:
+            pago_str += f", monto abonado/pagado: ${monto_abonado:,.0f}"
+        if row['pago_estado'] != 'pagado' and saldo_val > 0:
+            pago_str += f", saldo pendiente por cobrar: ${saldo_val:,.0f}"
+        elif row['pago_estado'] == 'pagado':
+            pago_str += ", pedido completamente pagado"
 
         texto = (
             f"Pedido #{row['id']} — "
@@ -101,14 +111,17 @@ def indexar_datos():
     ord_abonos = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM public.orders WHERE pago_estado = 'pendiente' OR pago_estado IS NULL")
     ord_pendientes = cur.fetchone()[0]
-    cur.execute("SELECT COALESCE(SUM(pago_monto), 0) FROM public.orders WHERE pago_estado = 'pagado'")
-    total_pagado = cur.fetchone()[0]
+    cur.execute("SELECT COALESCE(SUM(pago_monto), 0) FROM public.orders WHERE pago_estado IN ('pagado', 'abono')")
+    total_recaudado = cur.fetchone()[0]
+    cur.execute("SELECT COALESCE(SUM(precio_total - pago_monto), 0) FROM public.orders WHERE pago_estado != 'pagado' AND precio_total > 0")
+    total_por_cobrar = cur.fetchone()[0]
 
     resumen_pagos = (
         f"Resumen de pagos: {ord_pagados} pedidos pagados completamente, "
-        f"{ord_abonos} pedidos con abono, "
+        f"{ord_abonos} pedidos con abono parcial, "
         f"{ord_pendientes} pedidos con pago pendiente. "
-        f"Total recaudado: ${total_pagado}."
+        f"Total recaudado (pagos + abonos): ${total_recaudado:,.0f}. "
+        f"Total por cobrar (saldos pendientes): ${total_por_cobrar:,.0f}."
     )
     documentos.append(("pagos", resumen_pagos))
 
@@ -200,9 +213,10 @@ def responder_inteligente(pregunta: str) -> str:
         "Puedes responder saludos y preguntas generales de forma amable y natural. "
         "También tienes acceso a información de pedidos, clientes, pagos y catálogo de la empresa. "
         "Cuando te saluden, responde amablemente. "
-        "Cuando pregunten sobre datos de la empresa, usa el contexto proporcionado. "
+        "Cuando pregunten sobre datos de la empresa, usa EXACTAMENTE los datos del contexto proporcionado. "
+        "Puedes hacer cálculos con los datos del contexto: saldos, totales, diferencias. "
         "Si no tienes información específica, dilo amablemente. "
-        "Sé conciso, natural y profesional."
+        "Sé conciso, natural y profesional. Usa pesos colombianos (COP) para los montos."
     )
 
     try:
